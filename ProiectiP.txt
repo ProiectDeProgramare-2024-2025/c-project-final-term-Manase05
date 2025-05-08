@@ -1,0 +1,265 @@
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+
+#define MAX_GAMES 100
+#define TOTAL_MEMORY 1024
+
+typedef struct {
+    char name[50];
+    int size; // in GB
+} Game;
+
+Game installedGames[MAX_GAMES];
+int installedCount = 0;
+
+Game availableGames[MAX_GAMES];
+int availableCount = 0;
+
+int usedMemory = 0;
+
+// Console handle
+HANDLE hConsole;
+
+void set_color(int color) {
+    SetConsoleTextAttribute(hConsole, color);
+}
+
+void reset_color() {
+    SetConsoleTextAttribute(hConsole, 7); // Default color
+}
+
+void calculate_memory() {
+    usedMemory = 0;
+    for (int i = 0; i < installedCount; i++) {
+        usedMemory += installedGames[i].size;
+    }
+}
+void save_data();
+
+void reset_data() {
+    installedCount = 0;
+    availableCount = 0;
+    usedMemory = 0;
+
+    calculate_memory();
+    save_data();
+
+    set_color(10);
+    printf("Datele au fost resetate la valorile implicite.\n");
+    reset_color();
+}
+
+void display_games() {
+    printf("\n--- Installed Games (Used Memory: ");
+    set_color(14); // Yellow
+    printf("%dGB", usedMemory);
+    reset_color();
+    printf(" / %dGB) ---\n", TOTAL_MEMORY);
+
+    for (int i = 0; i < installedCount; i++) {
+        printf("%d. ", i + 1);
+        set_color(10); // Green
+        printf("%s", installedGames[i].name);
+        reset_color();
+        printf(" (%d GB)\n", installedGames[i].size);
+    }
+
+    printf("\n--- Available Games ---\n");
+    for (int i = 0; i < availableCount; i++) {
+        printf("%d. ", installedCount + i + 1);
+        set_color(9); // Blue
+        printf("%s", availableGames[i].name);
+        reset_color();
+        printf(" (%d GB)\n", availableGames[i].size);
+    }
+}
+
+void add_game(Game *list, int *count, const char *name, int size) {
+    if (*count < MAX_GAMES) {
+        strncpy(list[*count].name, name, 49);
+        list[*count].name[49] = '\0';
+        list[*count].size = size;
+        (*count)++;
+    }
+}
+
+void install_game(int index) {
+    int idx = index - installedCount - 1;
+    if (idx >= 0 && idx < availableCount) {
+        if (usedMemory + availableGames[idx].size <= TOTAL_MEMORY) {
+            add_game(installedGames, &installedCount, availableGames[idx].name, availableGames[idx].size);
+            usedMemory += availableGames[idx].size;
+
+            for (int i = idx; i < availableCount - 1; i++) {
+                availableGames[i] = availableGames[i + 1];
+            }
+            availableCount--;
+
+            set_color(10); // Green
+            printf("Game '%s' installed successfully.\n", installedGames[installedCount - 1].name);
+            reset_color();
+        } else {
+            set_color(12); // Red
+            printf("Not enough memory to install!\n");
+            reset_color();
+        }
+    } else {
+        set_color(12); // Red
+        printf("Invalid index for installation!\n");
+        reset_color();
+    }
+}
+
+void uninstall_game(int index) {
+    int idx = index - 1;
+    if (idx >= 0 && idx < installedCount) {
+        Game game = installedGames[idx];
+        add_game(availableGames, &availableCount, game.name, game.size);
+        usedMemory -= game.size;
+
+        for (int i = idx; i < installedCount - 1; i++) {
+            installedGames[i] = installedGames[i + 1];
+        }
+        installedCount--;
+
+        set_color(10); // Green
+        printf("Game '%s' was uninstalled.\n", game.name);
+        reset_color();
+    } else {
+        set_color(12); // Red
+        printf("Invalid index for uninstallation!\n");
+        reset_color();
+    }
+}
+
+
+void write_file(const char *filename, Game *list, int count) {
+    FILE *f = fopen(filename, "w");
+    if (f) {
+        for (int i = 0; i < count; i++) {
+            fprintf(f, "%s;%d\n", list[i].name, list[i].size);
+        }
+        fclose(f);
+    }
+}
+
+void read_file(const char *filename, Game *list, int *count) {
+    FILE *f = fopen(filename, "r");
+    *count = 0;
+    if (f) {
+        while (fscanf(f, "%49[^;];%d\n", list[*count].name, &list[*count].size) == 2) {
+            (*count)++;
+        }
+        fclose(f);
+    }
+}
+
+void save_data() {
+    write_file("installed_games.txt", installedGames, installedCount);
+    write_file("available_games.txt", availableGames, availableCount);
+}
+
+void load_data() {
+    read_file("installed_games.txt", installedGames, &installedCount);
+    read_file("available_games.txt", availableGames, &availableCount);
+
+    if (installedCount == 0 && availableCount == 0) {
+        add_game(availableGames, &availableCount, "Minecraft", 20);
+        add_game(availableGames, &availableCount, "Cyberpunk 2077", 150);
+        add_game(availableGames, &availableCount, "Among Us", 1);
+    }
+}
+
+int main() {
+    int option;
+    hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    load_data();
+    calculate_memory();
+
+    do {
+        printf("\n===== Game Manager Menu =====\n");
+        printf("1. View all games\n");
+        printf("2. Install a game\n");
+        printf("3. Uninstall a game\n");
+        printf("4. Search for a game\n");
+        printf("5. View storage usage\n");
+        printf("6. Resetare la jocurile implicite\n");
+        printf("0. Exit\n");
+        printf("Choose an option: ");
+        scanf("%d", &option);
+
+        switch (option) {
+            case 1:
+                display_games();
+                break;
+            case 2: {
+                display_games();
+                printf("Enter the number of the game to install: ");
+                int index;
+                scanf("%d", &index);
+                install_game(index);
+                break;
+            }
+            case 3: {
+                display_games();
+                printf("Enter the number of the game to uninstall: ");
+                int index;
+                scanf("%d", &index);
+                uninstall_game(index);
+                break;
+            }
+            case 4: {
+                char search[50];
+                printf("Enter game name to search: ");
+                getchar(); // clear newline from input buffer
+                fgets(search, sizeof(search), stdin);
+                search[strcspn(search, "\n")] = 0; // remove newline
+
+                int found = 0;
+                printf("\n--- Search Results ---\n");
+
+                for (int i = 0; i < installedCount; i++) {
+                    if (strstr(installedGames[i].name, search)) {
+                        printf("Installed: %s (%d GB)\n", installedGames[i].name, installedGames[i].size);
+                        found = 1;
+                    }
+                }
+                for (int i = 0; i < availableCount; i++) {
+                    if (strstr(availableGames[i].name, search)) {
+                        printf("Available: %s (%d GB)\n", availableGames[i].name, availableGames[i].size);
+                        found = 1;
+                    }
+                }
+                if (!found) {
+                    set_color(12);
+                    printf("No game found with that name.\n");
+                    reset_color();
+                }
+                break;
+            }
+            case 5:
+                printf("Used memory: %d GB / %d GB\n", usedMemory, TOTAL_MEMORY);
+                break;
+                case 6:
+                reset_data();
+                break;
+            case 0:
+                save_data();
+                set_color(9);
+                printf("Application closed.\n");
+                reset_color();
+                break;
+            default:
+                set_color(12);
+                printf("Invalid option!\n");
+                reset_color();
+                break;
+        }
+
+    } while (option != 0);
+
+    return 0;
+}
+
